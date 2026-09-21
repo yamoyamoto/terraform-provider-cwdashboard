@@ -39,8 +39,15 @@ jobs:
       # tfplugindocs uses the Terraform CLI from PATH when one is present, and
       # otherwise downloads it through hc-install, whose signature check fails
       # with "openpgp: key expired". aqua installs the CLI, so no download happens.
+      #
+      # AQUA_GLOBAL_CONFIG is required because tfplugindocs runs `terraform init`
+      # from a temporary directory. aqua resolves its config by walking up from
+      # the working directory, so outside the repository it finds none and the
+      # shim reports "command is not found".
       - name: Run go doc
         run: go generate ./...
+        env:
+          AQUA_GLOBAL_CONFIG: ${{ github.workspace }}/aqua.yaml
 
       - name: Commit changes
         run: |
