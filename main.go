@@ -20,7 +20,7 @@ func main() {
 	flag.Parse()
 
 	opts := providerserver.ServeOpts{
-		Address: "registry.terraform.io/yamoyamoto/aws-cloudwatch-dashboard",
+		Address: "registry.terraform.io/yamoyamoto/cwdashboard",
 		Debug:   debug,
 	}
 
