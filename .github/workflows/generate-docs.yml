@@ -36,6 +36,9 @@ jobs:
             ~/.cache/go-build
           key: golang-${{ runner.os }}-${{ hashFiles('go.mod') }}
 
+      # tfplugindocs uses the Terraform CLI from PATH when one is present, and
+      # otherwise downloads it through hc-install, whose signature check fails
+      # with "openpgp: key expired". aqua installs the CLI, so no download happens.
       - name: Run go doc
         run: go generate ./...
 
