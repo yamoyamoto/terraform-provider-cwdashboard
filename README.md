@@ -1,4 +1,4 @@
-# terraform-provider-aws-cloudwatch-dashboard
+# terraform-provider-cwdashboard
 
 A Terraform provider that enables structural definition of AWS CloudWatch Dashboards using HCL (HashiCorp Configuration Language). This provider internally constructs CloudWatch Dashboard JSON by composing multiple data sources.
 
@@ -12,11 +12,23 @@ To install this provider, copy and paste this code into your Terraform configura
 terraform {
   required_providers {
     cwdashboard = {
-      source  = "yamoyamoto/aws-cloudwatch-dashboard"
+      source  = "yamoyamoto/cwdashboard"
       version = "~> 0.1"
     }
   }
 }
+```
+
+The provider is also published under the older address
+`yamoyamoto/aws-cloudwatch-dashboard`, left over from a repository rename. Both
+addresses serve the same releases, but `yamoyamoto/cwdashboard` is the one to
+use. To move an existing configuration over, change the `source` and then tell
+Terraform about it:
+
+```console
+terraform state replace-provider \
+  registry.terraform.io/yamoyamoto/aws-cloudwatch-dashboard \
+  registry.terraform.io/yamoyamoto/cwdashboard
 ```
 
 ## Example Usage
