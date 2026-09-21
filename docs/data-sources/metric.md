@@ -59,14 +59,14 @@ resource "aws_cloudwatch_dashboard" "this" {
 
 ### Optional
 
-- `account` (String) Account which this metric comes from
+- `account` (String) The ID of the AWS account this metric comes from. Rendered as `accountId` in the dashboard body.
 - `color` (String) The hex color code, prefixed with '#' (e.g. '#00ff00'), to use when this metric is rendered on a graph
 - `dimensions_map` (Map of String) Dimensions of the metric
 - `label` (String) Label for this metric when added to a Graph in a Dashboard
 - `period` (Number) The period over which the specified statistic is applied
-- `region` (String) Region which this metric comes from
+- `region` (String) The region this metric comes from. Set it to graph metrics from another region on the same dashboard (for example CloudFront and CLOUDFRONT-scoped WAF, whose metrics live in `us-east-1`).
 - `statistic` (String) What function to use for aggregating
-- `unit` (String) Unit used to filter the metric stream
+- `unit` (String) Unit used to filter the metric stream. **Not rendered into the dashboard body**: the CloudWatch dashboard body structure has no per-metric unit field, so this value is accepted but ignored. Use `left_y_axis.show_units` / `right_y_axis.show_units` on the graph widget to control unit suffixes on the axis labels.
 
 ### Read-Only
 
