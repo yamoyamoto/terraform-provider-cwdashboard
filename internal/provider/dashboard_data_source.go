@@ -177,9 +177,11 @@ func (d *dashboardDataSource) Read(ctx context.Context, req datasource.ReadReque
 	}
 }
 
-func (d *dashboardDataSource) parseToWidgetSettings(ctx context.Context, elements []attr.Value) ([]interface{}, error) {
+// parseToWidgetSettings decodes each widget's JSON into its settings struct. It does
+// not assign positions: layout is done once, over the whole list, in
+// buildDashboardBodyJson.
+func (d *dashboardDataSource) parseToWidgetSettings(_ context.Context, elements []attr.Value) ([]interface{}, error) {
 	widgets := make([]interface{}, 0)
-	var currentPosition *widgetPosition
 	for _, elem := range elements {
 		// NOTE: Unmarshal twice because of double escaping by Terraform
 		var escaped string
@@ -198,31 +200,20 @@ func (d *dashboardDataSource) parseToWidgetSettings(ctx context.Context, element
 		}
 
 		switch widgetType {
-		case "text":
+		case typeTextWidget:
 			var w textWidgetDataSourceSettings
 			if err := json.Unmarshal([]byte(escaped), &w); err != nil {
 				return nil, fmt.Errorf("failed to unmarshal text widget json: %w", err)
 			}
-			widget, err := w.ToCWDashboardBodyWidget(ctx, w, currentPosition)
-			if err != nil {
-				return nil, fmt.Errorf("failed to parse text widget: %w", err)
-			}
-			currentPosition = &widgetPosition{X: widget.X, Y: widget.Y}
 			widgets = append(widgets, w)
-		case "graph":
+		case typeGraphWidget:
 			var w graphWidgetDataSourceSettings
 			if err := json.Unmarshal([]byte(escaped), &w); err != nil {
 				return nil, fmt.Errorf("failed to unmarshal graph widget json: %w", err)
 			}
-
-			widget, err := w.ToCWDashboardBodyWidget(ctx, currentPosition)
-			if err != nil {
-				return nil, fmt.Errorf("failed to parse graph widget: %w", err)
-			}
-			currentPosition = &widgetPosition{X: widget.X, Y: widget.Y}
 			widgets = append(widgets, w)
 		default:
-			return nil, fmt.Errorf("unsupported widget type")
+			return nil, fmt.Errorf("unsupported widget type: %s", widgetType)
 		}
 	}
 

@@ -239,26 +239,73 @@ func (d *graphWidgetDataSourceModel) Validate() error {
 		}
 	}
 
-	// Validate View
+	// Validate View. The full set of values accepted by CloudWatch is allowed: the
+	// value is passed straight through to the dashboard body, so restricting it here
+	// would only reject configurations that CloudWatch itself renders fine.
 	if !d.View.IsNull() {
 		view := d.View.ValueString()
 		validViews := map[string]bool{
 			"timeSeries":  true,
 			"singleValue": true,
+			"gauge":       true,
+			"bar":         true,
+			"pie":         true,
+			"table":       true,
 		}
 		if !validViews[view] {
-			return fmt.Errorf("view must be either 'timeSeries' or 'singleValue', got: %s", view)
+			return fmt.Errorf("view must be one of 'timeSeries', 'singleValue', 'gauge', 'bar', 'pie' or 'table', got: %s", view)
 		}
+	}
+
+	if err := validateWidgetSize(d.Width.ValueInt32(), d.Height.ValueInt32()); err != nil {
+		return err
 	}
 
 	return nil
 }
 
+// NOTE: Max / Min / ShowUnits are pointers so that the meaningful zero values
+// (`min = 0`, `max = 0`, `show_units = false`) are not dropped by `omitempty`
+// on the way to the dashboard body.
 type graphWidgetYAxisDataSourceSettings struct {
-	Label     string  `json:"label,omitempty"`
-	Max       float64 `json:"max,omitempty"`
-	Min       float64 `json:"min,omitempty"`
-	ShowUnits bool    `json:"show_units,omitempty"`
+	Label     string   `json:"label,omitempty"`
+	Max       *float64 `json:"max,omitempty"`
+	Min       *float64 `json:"min,omitempty"`
+	ShowUnits *bool    `json:"show_units,omitempty"`
+}
+
+func (a *graphWidgetYAxisDataSourceModel) toSettings() *graphWidgetYAxisDataSourceSettings {
+	if a == nil {
+		return nil
+	}
+
+	settings := &graphWidgetYAxisDataSourceSettings{
+		Label: a.Label.ValueString(),
+	}
+	if !a.Max.IsNull() {
+		settings.Max = ptrTo(a.Max.ValueFloat64())
+	}
+	if !a.Min.IsNull() {
+		settings.Min = ptrTo(a.Min.ValueFloat64())
+	}
+	if !a.ShowUnits.IsNull() {
+		settings.ShowUnits = ptrTo(a.ShowUnits.ValueBool())
+	}
+
+	return settings
+}
+
+func (s *graphWidgetYAxisDataSourceSettings) toCWDashboardBodyYAxisSide() *CWDashboardBodyWidgetPropertyMetricYAxisSide {
+	if s == nil {
+		return nil
+	}
+
+	return &CWDashboardBodyWidgetPropertyMetricYAxisSide{
+		Label:     s.Label,
+		Max:       s.Max,
+		Min:       s.Min,
+		ShowUnits: s.ShowUnits,
+	}
 }
 
 const (
@@ -398,6 +445,11 @@ func (d *graphWidgetDataSource) Read(ctx context.Context, req datasource.ReadReq
 		return
 	}
 
+	if err := state.Validate(); err != nil {
+		resp.Diagnostics.AddError("failed to validate graph widget data source", err.Error())
+		return
+	}
+
 	// Parse left metrics from JSON
 	leftMetrics := make([]IMetricSettings, len(state.Left))
 	for i, metricJson := range state.Left {
@@ -458,22 +510,8 @@ func (d *graphWidgetDataSource) Read(ctx context.Context, req datasource.ReadReq
 		Width:          state.Width.ValueInt32(),
 	}
 
-	if state.LeftYAxis != nil {
-		settings.LeftYAxis = &graphWidgetYAxisDataSourceSettings{
-			Label:     state.LeftYAxis.Label.ValueString(),
-			Max:       state.LeftYAxis.Max.ValueFloat64(),
-			Min:       state.LeftYAxis.Min.ValueFloat64(),
-			ShowUnits: state.LeftYAxis.ShowUnits.ValueBool(),
-		}
-	}
-	if state.RightYAxis != nil {
-		settings.RightYAxis = &graphWidgetYAxisDataSourceSettings{
-			Label:     state.RightYAxis.Label.ValueString(),
-			Max:       state.RightYAxis.Max.ValueFloat64(),
-			Min:       state.RightYAxis.Min.ValueFloat64(),
-			ShowUnits: state.RightYAxis.ShowUnits.ValueBool(),
-		}
-	}
+	settings.LeftYAxis = state.LeftYAxis.toSettings()
+	settings.RightYAxis = state.RightYAxis.toSettings()
 
 	b, err := json.Marshal(settings)
 	if err != nil {
@@ -494,26 +532,11 @@ func (d *graphWidgetDataSource) Read(ctx context.Context, req datasource.ReadReq
 	}
 }
 
-func (w graphWidgetDataSourceSettings) ToCWDashboardBodyWidget(ctx context.Context, beforeWidgetPosition *widgetPosition) (CWDashboardBodyWidget, error) {
-	var leftYAxis *CWDashboardBodyWidgetPropertyMetricYAxisSide
-	if w.LeftYAxis != nil {
-		leftYAxis = &CWDashboardBodyWidgetPropertyMetricYAxisSide{
-			Label:     w.LeftYAxis.Label,
-			Max:       w.LeftYAxis.Max,
-			Min:       w.LeftYAxis.Min,
-			ShowUnits: w.LeftYAxis.ShowUnits,
-		}
-	}
-
-	var rightYAxis *CWDashboardBodyWidgetPropertyMetricYAxisSide
-	if w.RightYAxis != nil {
-		rightYAxis = &CWDashboardBodyWidgetPropertyMetricYAxisSide{
-			Label:     w.RightYAxis.Label,
-			Max:       w.RightYAxis.Max,
-			Min:       w.RightYAxis.Min,
-			ShowUnits: w.RightYAxis.ShowUnits,
-		}
-	}
+// ToCWDashboardBodyWidget builds the widget without its position. X / Y are assigned
+// later by layoutWidgets, which sees the whole widget list.
+func (w graphWidgetDataSourceSettings) ToCWDashboardBodyWidget(ctx context.Context) (CWDashboardBodyWidget, error) {
+	leftYAxis := w.LeftYAxis.toCWDashboardBodyYAxisSide()
+	rightYAxis := w.RightYAxis.toCWDashboardBodyYAxisSide()
 
 	var yAxis *CWDashboardBodyWidgetPropertyMetricYAxis
 	if leftYAxis != nil || rightYAxis != nil {
@@ -586,10 +609,6 @@ func (w graphWidgetDataSourceSettings) ToCWDashboardBodyWidget(ctx context.Conte
 			Table: nil,
 		},
 	}
-
-	position := calculatePosition(widgetSize{Width: cwWidget.Width, Height: cwWidget.Height}, beforeWidgetPosition)
-	cwWidget.X = position.X
-	cwWidget.Y = position.Y
 
 	tflog.Debug(ctx, "built graph widget", map[string]interface{}{
 		"widget": cwWidget,

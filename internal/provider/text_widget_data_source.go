@@ -64,6 +64,10 @@ type textWidgetDataSourceModel struct {
 	Json types.String `tfsdk:"json"`
 }
 
+func (d *textWidgetDataSourceModel) Validate() error {
+	return validateWidgetSize(d.Width.ValueInt32(), d.Height.ValueInt32())
+}
+
 type textWidgetDataSourceSettings struct {
 	Type       string `json:"type"`
 	Markdown   string `json:"markdown"`
@@ -81,6 +85,11 @@ func (d *textWidgetDataSource) Read(ctx context.Context, req datasource.ReadRequ
 
 	resp.Diagnostics.Append(req.Config.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if err := state.Validate(); err != nil {
+		resp.Diagnostics.AddError("failed to validate text widget data source", err.Error())
 		return
 	}
 
@@ -111,20 +120,18 @@ func (d *textWidgetDataSource) Read(ctx context.Context, req datasource.ReadRequ
 	}
 }
 
-func (w textWidgetDataSourceSettings) ToCWDashboardBodyWidget(ctx context.Context, widget textWidgetDataSourceSettings, beforeWidgetPosition *widgetPosition) (CWDashboardBodyWidget, error) {
+// ToCWDashboardBodyWidget builds the widget without its position. X / Y are assigned
+// later by layoutWidgets, which sees the whole widget list.
+func (w textWidgetDataSourceSettings) ToCWDashboardBodyWidget(ctx context.Context) (CWDashboardBodyWidget, error) {
 	cwWidget := CWDashboardBodyWidget{
 		Type:   "text",
-		Width:  widget.Width,
-		Height: widget.Height,
+		Width:  w.Width,
+		Height: w.Height,
 		Properties: CWDashboardBodyWidgetPropertyText{
-			Markdown:   widget.Markdown,
-			Background: widget.Background,
+			Markdown:   w.Markdown,
+			Background: w.Background,
 		},
 	}
-
-	position := calculatePosition(widgetSize{Width: cwWidget.Width, Height: cwWidget.Height}, beforeWidgetPosition)
-	cwWidget.X = position.X
-	cwWidget.Y = position.Y
 
 	tflog.Debug(ctx, "built text widget", map[string]interface{}{
 		"widget": cwWidget,
