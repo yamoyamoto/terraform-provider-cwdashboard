@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Code-Hex/synchro/iso8601"
+
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -38,6 +40,83 @@ func (d *graphWidgetDataSource) Schema(_ context.Context, _ datasource.SchemaReq
 			"height": schema.Int32Attribute{
 				Description: "Height of the widget",
 				Required:    true,
+			},
+			"annotations": schema.SingleNestedAttribute{
+				Description: "Lines drawn on top of the graph. Use `horizontal` for a threshold, " +
+					"`vertical` to mark a point in time, and `alarms` to render a single alarm " +
+					"instead of metrics. CloudWatch does not allow `alarms` together with metrics " +
+					"or with the other annotation kinds.",
+				Optional: true,
+				Attributes: map[string]schema.Attribute{
+					"alarms": schema.ListAttribute{
+						Description: "The ARN of a single alarm to render. At most one, and only when " +
+							"`left`, `right`, `horizontal` and `vertical` are all empty.",
+						Optional:    true,
+						ElementType: types.StringType,
+					},
+					"horizontal": schema.ListNestedAttribute{
+						Description: "Horizontal lines, typically alarm thresholds",
+						Optional:    true,
+						NestedObject: schema.NestedAttributeObject{
+							Attributes: map[string]schema.Attribute{
+								"value": schema.Float64Attribute{
+									Description: "The value on the Y axis to draw the line at",
+									Required:    true,
+								},
+								"label": schema.StringAttribute{
+									Description: "Label for the line",
+									Optional:    true,
+								},
+								"color": schema.StringAttribute{
+									Description: "The hex color code, prefixed with '#' (e.g. '#00ff00')",
+									Optional:    true,
+								},
+								"fill": schema.StringAttribute{
+									Description: "Shade the area on one side of the line. " +
+										"Valid values: `above`, `below`, `none`.",
+									Optional: true,
+								},
+								"visible": schema.BoolAttribute{
+									Description: "Whether the line is shown. Defaults to true.",
+									Optional:    true,
+								},
+								"y_axis": schema.StringAttribute{
+									Description: "Which axis the value belongs to. Valid values: `left`, `right`.",
+									Optional:    true,
+								},
+							},
+						},
+					},
+					"vertical": schema.ListNestedAttribute{
+						Description: "Vertical lines, typically marking a deploy or an incident",
+						Optional:    true,
+						NestedObject: schema.NestedAttributeObject{
+							Attributes: map[string]schema.Attribute{
+								"value": schema.StringAttribute{
+									Description: "The point in time to draw the line at, in ISO 8601 format",
+									Required:    true,
+								},
+								"label": schema.StringAttribute{
+									Description: "Label for the line",
+									Optional:    true,
+								},
+								"color": schema.StringAttribute{
+									Description: "The hex color code, prefixed with '#' (e.g. '#00ff00')",
+									Optional:    true,
+								},
+								"fill": schema.StringAttribute{
+									Description: "Shade the area on one side of the line. " +
+										"Valid values: `before`, `after`, `none`.",
+									Optional: true,
+								},
+								"visible": schema.BoolAttribute{
+									Description: "Whether the line is shown. Defaults to true.",
+									Optional:    true,
+								},
+							},
+						},
+					},
+				},
 			},
 			"left": schema.ListAttribute{
 				Description: "Metrics to display on left Y axis",
@@ -152,24 +231,48 @@ type graphWidgetYAxisDataSourceModel struct {
 	ShowUnits types.Bool    `tfsdk:"show_units"`
 }
 
+type graphWidgetAnnotationsDataSourceModel struct {
+	Alarms     []types.String                                   `tfsdk:"alarms"`
+	Horizontal []graphWidgetHorizontalAnnotationDataSourceModel `tfsdk:"horizontal"`
+	Vertical   []graphWidgetVerticalAnnotationDataSourceModel   `tfsdk:"vertical"`
+}
+
+type graphWidgetHorizontalAnnotationDataSourceModel struct {
+	Value   types.Float64 `tfsdk:"value"`
+	Label   types.String  `tfsdk:"label"`
+	Color   types.String  `tfsdk:"color"`
+	Fill    types.String  `tfsdk:"fill"`
+	Visible types.Bool    `tfsdk:"visible"`
+	YAxis   types.String  `tfsdk:"y_axis"`
+}
+
+type graphWidgetVerticalAnnotationDataSourceModel struct {
+	Value   types.String `tfsdk:"value"`
+	Label   types.String `tfsdk:"label"`
+	Color   types.String `tfsdk:"color"`
+	Fill    types.String `tfsdk:"fill"`
+	Visible types.Bool   `tfsdk:"visible"`
+}
+
 type graphWidgetDataSourceModel struct {
-	Height         types.Int32                      `tfsdk:"height"`
-	Left           []types.String                   `tfsdk:"left"` // JSON string containing array of metrics
-	LeftYAxis      *graphWidgetYAxisDataSourceModel `tfsdk:"left_y_axis"`
-	LegendPosition types.String                     `tfsdk:"legend_position"`
-	LiveData       types.Bool                       `tfsdk:"live_data"`
-	Period         types.Int32                      `tfsdk:"period"`
-	Region         types.String                     `tfsdk:"region"`
-	Right          []types.String                   `tfsdk:"right"` // JSON string containing array of metrics
-	RightYAxis     *graphWidgetYAxisDataSourceModel `tfsdk:"right_y_axis"`
-	Sparkline      types.Bool                       `tfsdk:"sparkline"`
-	Stacked        types.Bool                       `tfsdk:"stacked"`
-	Statistic      types.String                     `tfsdk:"statistic"`
-	Timezone       types.String                     `tfsdk:"timezone"`
-	Title          types.String                     `tfsdk:"title"`
-	View           types.String                     `tfsdk:"view"`
-	Width          types.Int32                      `tfsdk:"width"`
-	Json           types.String                     `tfsdk:"json"`
+	Annotations    *graphWidgetAnnotationsDataSourceModel `tfsdk:"annotations"`
+	Height         types.Int32                            `tfsdk:"height"`
+	Left           []types.String                         `tfsdk:"left"` // JSON string containing array of metrics
+	LeftYAxis      *graphWidgetYAxisDataSourceModel       `tfsdk:"left_y_axis"`
+	LegendPosition types.String                           `tfsdk:"legend_position"`
+	LiveData       types.Bool                             `tfsdk:"live_data"`
+	Period         types.Int32                            `tfsdk:"period"`
+	Region         types.String                           `tfsdk:"region"`
+	Right          []types.String                         `tfsdk:"right"` // JSON string containing array of metrics
+	RightYAxis     *graphWidgetYAxisDataSourceModel       `tfsdk:"right_y_axis"`
+	Sparkline      types.Bool                             `tfsdk:"sparkline"`
+	Stacked        types.Bool                             `tfsdk:"stacked"`
+	Statistic      types.String                           `tfsdk:"statistic"`
+	Timezone       types.String                           `tfsdk:"timezone"`
+	Title          types.String                           `tfsdk:"title"`
+	View           types.String                           `tfsdk:"view"`
+	Width          types.Int32                            `tfsdk:"width"`
+	Json           types.String                           `tfsdk:"json"`
 }
 
 func (d *graphWidgetDataSourceModel) Validate() error {
@@ -261,7 +364,151 @@ func (d *graphWidgetDataSourceModel) Validate() error {
 		return err
 	}
 
+	if err := d.Annotations.Validate(len(d.Left) > 0 || len(d.Right) > 0); err != nil {
+		return err
+	}
+
 	return nil
+}
+
+func (a *graphWidgetAnnotationsDataSourceModel) Validate(hasMetrics bool) error {
+	if a == nil {
+		return nil
+	}
+
+	if len(a.Alarms) > 0 {
+		// CloudWatch renders an alarm annotation instead of metrics, not on top
+		// of them: the widget carries either one alarm or a metrics array.
+		if len(a.Alarms) > 1 {
+			return fmt.Errorf("annotations.alarms accepts at most one alarm ARN, got: %d", len(a.Alarms))
+		}
+		if hasMetrics {
+			return fmt.Errorf("annotations.alarms cannot be combined with left or right metrics")
+		}
+		if len(a.Horizontal) > 0 || len(a.Vertical) > 0 {
+			return fmt.Errorf("annotations.alarms cannot be combined with horizontal or vertical annotations")
+		}
+		if !alarmArnPattern.MatchString(a.Alarms[0].ValueString()) {
+			return fmt.Errorf("invalid alarm ARN: %s", a.Alarms[0].ValueString())
+		}
+	}
+
+	validHorizontalFill := map[string]bool{"above": true, "below": true, "none": true}
+	for _, h := range a.Horizontal {
+		if fill := h.Fill.ValueString(); fill != "" && !validHorizontalFill[fill] {
+			return fmt.Errorf("annotations.horizontal.fill must be one of 'above', 'below' or 'none', got: %s", fill)
+		}
+		if yAxis := h.YAxis.ValueString(); yAxis != "" && yAxis != "left" && yAxis != "right" {
+			return fmt.Errorf("annotations.horizontal.y_axis must be either 'left' or 'right', got: %s", yAxis)
+		}
+		if color := h.Color.ValueString(); color != "" && !hexColorPattern.MatchString(color) {
+			return fmt.Errorf("invalid color format: %s, must be a six-digit hex color code (e.g., #FF0000)", color)
+		}
+	}
+
+	validVerticalFill := map[string]bool{"before": true, "after": true, "none": true}
+	for _, v := range a.Vertical {
+		if fill := v.Fill.ValueString(); fill != "" && !validVerticalFill[fill] {
+			return fmt.Errorf("annotations.vertical.fill must be one of 'before', 'after' or 'none', got: %s", fill)
+		}
+		if color := v.Color.ValueString(); color != "" && !hexColorPattern.MatchString(color) {
+			return fmt.Errorf("invalid color format: %s, must be a six-digit hex color code (e.g., #FF0000)", color)
+		}
+		if _, err := iso8601.ParseDateTime(v.Value.ValueString()); err != nil {
+			return fmt.Errorf("annotations.vertical.value must be a valid ISO8601 date: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// NOTE: Value carries no omitempty and Visible is a pointer, so that a threshold
+// line at 0 and an explicit `visible = false` survive this hop too. The settings
+// JSON is a second place where omitempty can silently drop them.
+type graphWidgetAnnotationsDataSourceSettings struct {
+	Alarms     []string                                            `json:"alarms,omitempty"`
+	Horizontal []graphWidgetHorizontalAnnotationDataSourceSettings `json:"horizontal,omitempty"`
+	Vertical   []graphWidgetVerticalAnnotationDataSourceSettings   `json:"vertical,omitempty"`
+}
+
+type graphWidgetHorizontalAnnotationDataSourceSettings struct {
+	Value   float64 `json:"value"`
+	Label   string  `json:"label,omitempty"`
+	Color   string  `json:"color,omitempty"`
+	Fill    string  `json:"fill,omitempty"`
+	Visible *bool   `json:"visible,omitempty"`
+	YAxis   string  `json:"y_axis,omitempty"`
+}
+
+type graphWidgetVerticalAnnotationDataSourceSettings struct {
+	Value   string `json:"value"`
+	Label   string `json:"label,omitempty"`
+	Color   string `json:"color,omitempty"`
+	Fill    string `json:"fill,omitempty"`
+	Visible *bool  `json:"visible,omitempty"`
+}
+
+func (a *graphWidgetAnnotationsDataSourceModel) toSettings() *graphWidgetAnnotationsDataSourceSettings {
+	if a == nil {
+		return nil
+	}
+
+	settings := &graphWidgetAnnotationsDataSourceSettings{
+		Alarms: toStringSlice(a.Alarms),
+	}
+
+	for _, h := range a.Horizontal {
+		horizontal := graphWidgetHorizontalAnnotationDataSourceSettings{
+			Value: h.Value.ValueFloat64(),
+			Label: h.Label.ValueString(),
+			Color: h.Color.ValueString(),
+			Fill:  h.Fill.ValueString(),
+			YAxis: h.YAxis.ValueString(),
+		}
+		if !h.Visible.IsNull() {
+			horizontal.Visible = ptrTo(h.Visible.ValueBool())
+		}
+		settings.Horizontal = append(settings.Horizontal, horizontal)
+	}
+
+	for _, v := range a.Vertical {
+		vertical := graphWidgetVerticalAnnotationDataSourceSettings{
+			Value: v.Value.ValueString(),
+			Label: v.Label.ValueString(),
+			Color: v.Color.ValueString(),
+			Fill:  v.Fill.ValueString(),
+		}
+		if !v.Visible.IsNull() {
+			vertical.Visible = ptrTo(v.Visible.ValueBool())
+		}
+		settings.Vertical = append(settings.Vertical, vertical)
+	}
+
+	return settings
+}
+
+func (s *graphWidgetAnnotationsDataSourceSettings) toCWDashboardBodyAnnotations() *CWDashboardBodyWidgetPropertyMetricAnnotations {
+	if s == nil {
+		return nil
+	}
+
+	annotations := &CWDashboardBodyWidgetPropertyMetricAnnotations{
+		Alarms: s.Alarms,
+	}
+
+	// The settings structs and the body structs hold the same fields in the same
+	// order and differ only in their JSON tags (snake_case for the intermediate
+	// settings, camelCase for the dashboard body), so a conversion is enough.
+	// It also fails to compile if the two ever drift apart.
+	for _, h := range s.Horizontal {
+		annotations.Horizontal = append(annotations.Horizontal, CWDashboardBodyWidgetPropertyMetricAnnotationsHorizontal(h))
+	}
+
+	for _, v := range s.Vertical {
+		annotations.Vertical = append(annotations.Vertical, CWDashboardBodyWidgetPropertyMetricAnnotationsVertical(v))
+	}
+
+	return annotations
 }
 
 // NOTE: Max / Min / ShowUnits are pointers so that the meaningful zero values
@@ -313,42 +560,44 @@ const (
 )
 
 type graphWidgetDataSourceSettings struct {
-	Type           string                              `json:"type"`
-	Height         int32                               `json:"height"`
-	Left           []IMetricSettings                   `json:"left,omitempty"`
-	LeftYAxis      *graphWidgetYAxisDataSourceSettings `json:"left_y_axis,omitempty"`
-	LegendPosition string                              `json:"legend_position,omitempty"`
-	LiveData       bool                                `json:"live_data,omitempty"`
-	Period         int32                               `json:"period,omitempty"`
-	Region         string                              `json:"region,omitempty"`
-	Right          []IMetricSettings                   `json:"right,omitempty"`
-	RightYAxis     *graphWidgetYAxisDataSourceSettings `json:"right_y_axis,omitempty"`
-	Sparkline      bool                                `json:"sparkline,omitempty"`
-	Stacked        bool                                `json:"stacked,omitempty"`
-	Statistic      string                              `json:"statistic,omitempty"`
-	Timezone       string                              `json:"timezone,omitempty"`
-	Title          string                              `json:"title,omitempty"`
-	View           string                              `json:"view,omitempty"`
-	Width          int32                               `json:"width"`
+	Type           string                                    `json:"type"`
+	Annotations    *graphWidgetAnnotationsDataSourceSettings `json:"annotations,omitempty"`
+	Height         int32                                     `json:"height"`
+	Left           []IMetricSettings                         `json:"left,omitempty"`
+	LeftYAxis      *graphWidgetYAxisDataSourceSettings       `json:"left_y_axis,omitempty"`
+	LegendPosition string                                    `json:"legend_position,omitempty"`
+	LiveData       bool                                      `json:"live_data,omitempty"`
+	Period         int32                                     `json:"period,omitempty"`
+	Region         string                                    `json:"region,omitempty"`
+	Right          []IMetricSettings                         `json:"right,omitempty"`
+	RightYAxis     *graphWidgetYAxisDataSourceSettings       `json:"right_y_axis,omitempty"`
+	Sparkline      bool                                      `json:"sparkline,omitempty"`
+	Stacked        bool                                      `json:"stacked,omitempty"`
+	Statistic      string                                    `json:"statistic,omitempty"`
+	Timezone       string                                    `json:"timezone,omitempty"`
+	Title          string                                    `json:"title,omitempty"`
+	View           string                                    `json:"view,omitempty"`
+	Width          int32                                     `json:"width"`
 }
 
 func (s *graphWidgetDataSourceSettings) UnmarshalJSON(data []byte) error {
 	var intermediate struct {
-		Type           string                              `json:"type"`
-		Height         int32                               `json:"height"`
-		LeftYAxis      *graphWidgetYAxisDataSourceSettings `json:"left_y_axis,omitempty"`
-		LegendPosition string                              `json:"legend_position,omitempty"`
-		LiveData       bool                                `json:"live_data,omitempty"`
-		Period         int32                               `json:"period,omitempty"`
-		Region         string                              `json:"region,omitempty"`
-		RightYAxis     *graphWidgetYAxisDataSourceSettings `json:"right_y_axis,omitempty"`
-		Sparkline      bool                                `json:"sparkline,omitempty"`
-		Stacked        bool                                `json:"stacked,omitempty"`
-		Statistic      string                              `json:"statistic,omitempty"`
-		Timezone       string                              `json:"timezone,omitempty"`
-		Title          string                              `json:"title,omitempty"`
-		View           string                              `json:"view,omitempty"`
-		Width          int32                               `json:"width"`
+		Type           string                                    `json:"type"`
+		Annotations    *graphWidgetAnnotationsDataSourceSettings `json:"annotations,omitempty"`
+		Height         int32                                     `json:"height"`
+		LeftYAxis      *graphWidgetYAxisDataSourceSettings       `json:"left_y_axis,omitempty"`
+		LegendPosition string                                    `json:"legend_position,omitempty"`
+		LiveData       bool                                      `json:"live_data,omitempty"`
+		Period         int32                                     `json:"period,omitempty"`
+		Region         string                                    `json:"region,omitempty"`
+		RightYAxis     *graphWidgetYAxisDataSourceSettings       `json:"right_y_axis,omitempty"`
+		Sparkline      bool                                      `json:"sparkline,omitempty"`
+		Stacked        bool                                      `json:"stacked,omitempty"`
+		Statistic      string                                    `json:"statistic,omitempty"`
+		Timezone       string                                    `json:"timezone,omitempty"`
+		Title          string                                    `json:"title,omitempty"`
+		View           string                                    `json:"view,omitempty"`
+		Width          int32                                     `json:"width"`
 		// Left/Right has multiple types, so we need to unmarshal them separately
 		Left  []interface{} `json:"left"`
 		Right []interface{} `json:"right"`
@@ -359,6 +608,7 @@ func (s *graphWidgetDataSourceSettings) UnmarshalJSON(data []byte) error {
 	}
 
 	s.Type = intermediate.Type
+	s.Annotations = intermediate.Annotations
 	s.Height = intermediate.Height
 	s.LeftYAxis = intermediate.LeftYAxis
 	s.LegendPosition = intermediate.LegendPosition
@@ -510,6 +760,7 @@ func (d *graphWidgetDataSource) Read(ctx context.Context, req datasource.ReadReq
 		Width:          state.Width.ValueInt32(),
 	}
 
+	settings.Annotations = state.Annotations.toSettings()
 	settings.LeftYAxis = state.LeftYAxis.toSettings()
 	settings.RightYAxis = state.RightYAxis.toSettings()
 
@@ -591,7 +842,8 @@ func (w graphWidgetDataSourceSettings) ToCWDashboardBodyWidget(ctx context.Conte
 		Width:  w.Width,
 		Height: w.Height,
 		Properties: CWDashboardBodyWidgetPropertyMetric{
-			LiveData: w.LiveData,
+			Annotations: w.Annotations.toCWDashboardBodyAnnotations(),
+			LiveData:    w.LiveData,
 			Legend: &CWDashboardBodyWidgetPropertyMetricLegend{
 				Position: w.LegendPosition,
 			},

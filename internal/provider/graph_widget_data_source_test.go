@@ -309,7 +309,16 @@ func TestGraphWidgetDatasourceSettings_ToCWDashboardBodyWidget(t *testing.T) {
 // round trip fails whenever that happens.
 func TestGraphWidgetDataSourceSettings_JSONRoundTrip(t *testing.T) {
 	original := graphWidgetDataSourceSettings{
-		Type:   typeGraphWidget,
+		Type: typeGraphWidget,
+		Annotations: &graphWidgetAnnotationsDataSourceSettings{
+			Horizontal: []graphWidgetHorizontalAnnotationDataSourceSettings{
+				{Value: 0, Label: "floor", Fill: "below", Visible: ptrTo(false), YAxis: "left"},
+				{Value: 45, Label: "cpu threshold"},
+			},
+			Vertical: []graphWidgetVerticalAnnotationDataSourceSettings{
+				{Value: "2026-09-21T00:00:00Z", Label: "deploy"},
+			},
+		},
 		Height: 6,
 		Left: []IMetricSettings{
 			&metricDataSourceSettings{
@@ -391,4 +400,153 @@ func TestGraphWidgetDataSourceSettings_YAxisZeroValuesSurvive(t *testing.T) {
 
 	assert.Contains(t, string(encoded), `"min":0`)
 	assert.Contains(t, string(encoded), `"showUnits":false`)
+}
+
+func TestGraphWidgetAnnotations_ZeroValuesSurvive(t *testing.T) {
+	w := graphWidgetDataSourceSettings{
+		Type:   typeGraphWidget,
+		Width:  12,
+		Height: 6,
+		Region: "ap-northeast-1",
+		Annotations: &graphWidgetAnnotationsDataSourceSettings{
+			Horizontal: []graphWidgetHorizontalAnnotationDataSourceSettings{
+				// A threshold of 0 and an explicit "hide this line" are both
+				// meaningful, and both look like empty values to omitempty.
+				{Value: 0, Visible: ptrTo(false)},
+			},
+			Vertical: []graphWidgetVerticalAnnotationDataSourceSettings{
+				{Value: "2026-09-21T00:00:00Z", Visible: ptrTo(false)},
+			},
+		},
+	}
+
+	cwWidget, err := w.ToCWDashboardBodyWidget(context.TODO())
+	assert.NoError(t, err)
+
+	encoded, err := json.Marshal(cwWidget)
+	assert.NoError(t, err)
+
+	assert.Contains(t, string(encoded), `"value":0`)
+	assert.Contains(t, string(encoded), `"visible":false`)
+	assert.Contains(t, string(encoded), `"annotations"`)
+}
+
+func TestGraphWidgetAnnotations_OmittedWhenUnset(t *testing.T) {
+	w := graphWidgetDataSourceSettings{
+		Type: typeGraphWidget, Width: 12, Height: 6, Region: "ap-northeast-1",
+	}
+
+	cwWidget, err := w.ToCWDashboardBodyWidget(context.TODO())
+	assert.NoError(t, err)
+
+	encoded, err := json.Marshal(cwWidget)
+	assert.NoError(t, err)
+
+	assert.NotContains(t, string(encoded), `"annotations"`)
+}
+
+func TestGraphWidgetAnnotationsDataSourceModel_Validate(t *testing.T) {
+	alarmArn := types.StringValue("arn:aws:cloudwatch:ap-northeast-1:123456789012:alarm:api-cpu-high")
+
+	tests := []struct {
+		name        string
+		annotations *graphWidgetAnnotationsDataSourceModel
+		hasMetrics  bool
+		wantErr     string
+	}{
+		{
+			name: "valid horizontal and vertical annotations",
+			annotations: &graphWidgetAnnotationsDataSourceModel{
+				Horizontal: []graphWidgetHorizontalAnnotationDataSourceModel{
+					{Value: types.Float64Value(45), Fill: types.StringValue("above"), YAxis: types.StringValue("left"), Color: types.StringValue("#FF0000")},
+				},
+				Vertical: []graphWidgetVerticalAnnotationDataSourceModel{
+					{Value: types.StringValue("2026-09-21T00:00:00Z"), Fill: types.StringValue("before")},
+				},
+			},
+			hasMetrics: true,
+		},
+		{
+			name:        "valid alarm annotation on a widget without metrics",
+			annotations: &graphWidgetAnnotationsDataSourceModel{Alarms: []types.String{alarmArn}},
+		},
+		{
+			name:        "rejects more than one alarm",
+			annotations: &graphWidgetAnnotationsDataSourceModel{Alarms: []types.String{alarmArn, alarmArn}},
+			wantErr:     "annotations.alarms accepts at most one alarm ARN, got: 2",
+		},
+		{
+			name:        "rejects an alarm annotation alongside metrics",
+			annotations: &graphWidgetAnnotationsDataSourceModel{Alarms: []types.String{alarmArn}},
+			hasMetrics:  true,
+			wantErr:     "annotations.alarms cannot be combined with left or right metrics",
+		},
+		{
+			name: "rejects an alarm annotation alongside a threshold line",
+			annotations: &graphWidgetAnnotationsDataSourceModel{
+				Alarms:     []types.String{alarmArn},
+				Horizontal: []graphWidgetHorizontalAnnotationDataSourceModel{{Value: types.Float64Value(1)}},
+			},
+			wantErr: "annotations.alarms cannot be combined with horizontal or vertical annotations",
+		},
+		{
+			name:        "rejects an alarm name that is not an ARN",
+			annotations: &graphWidgetAnnotationsDataSourceModel{Alarms: []types.String{types.StringValue("api-cpu-high")}},
+			wantErr:     "invalid alarm ARN: api-cpu-high",
+		},
+		{
+			name: "rejects an unknown horizontal fill",
+			annotations: &graphWidgetAnnotationsDataSourceModel{
+				Horizontal: []graphWidgetHorizontalAnnotationDataSourceModel{{Value: types.Float64Value(1), Fill: types.StringValue("before")}},
+			},
+			wantErr: "annotations.horizontal.fill must be one of 'above', 'below' or 'none', got: before",
+		},
+		{
+			name: "rejects an unknown y_axis",
+			annotations: &graphWidgetAnnotationsDataSourceModel{
+				Horizontal: []graphWidgetHorizontalAnnotationDataSourceModel{{Value: types.Float64Value(1), YAxis: types.StringValue("middle")}},
+			},
+			wantErr: "annotations.horizontal.y_axis must be either 'left' or 'right', got: middle",
+		},
+		{
+			name: "rejects a malformed color",
+			annotations: &graphWidgetAnnotationsDataSourceModel{
+				Horizontal: []graphWidgetHorizontalAnnotationDataSourceModel{{Value: types.Float64Value(1), Color: types.StringValue("red")}},
+			},
+			wantErr: "invalid color format: red, must be a six-digit hex color code (e.g., #FF0000)",
+		},
+		{
+			name: "rejects an unknown vertical fill",
+			annotations: &graphWidgetAnnotationsDataSourceModel{
+				Vertical: []graphWidgetVerticalAnnotationDataSourceModel{{Value: types.StringValue("2026-09-21T00:00:00Z"), Fill: types.StringValue("above")}},
+			},
+			wantErr: "annotations.vertical.fill must be one of 'before', 'after' or 'none', got: above",
+		},
+		{
+			name: "rejects a vertical value that is not a timestamp",
+			annotations: &graphWidgetAnnotationsDataSourceModel{
+				Vertical: []graphWidgetVerticalAnnotationDataSourceModel{{Value: types.StringValue("yesterday")}},
+			},
+			wantErr: "annotations.vertical.value must be a valid ISO8601 date",
+		},
+		{
+			name:        "accepts no annotations at all",
+			annotations: nil,
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := tc.annotations.Validate(tc.hasMetrics)
+			if tc.wantErr != "" {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tc.wantErr)
+				return
+			}
+			assert.NoError(t, err)
+		})
+	}
 }

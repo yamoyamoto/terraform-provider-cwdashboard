@@ -36,21 +36,22 @@ type CWDashboardBodyWidgetPropertyText struct {
 type CWDashboardBodyWidgetPropertyMetric struct {
 	// NOTE: Widget level settings are not supported yet
 	// AccountId string `json:"accountId,omitempty"`
-	// NOTE: annotations are not supported yet
-	// Annotations *CWDashboardBodyWidgetPropertyMetricAnnotations `json:"annotations,omitempty"`
-	LiveData  bool                                       `json:"liveData,omitempty"`
-	Legend    *CWDashboardBodyWidgetPropertyMetricLegend `json:"legend,omitempty"`
-	Metrics   [][]interface{}                            `json:"metrics"`
-	Period    int32                                      `json:"period,omitempty"`
-	Region    string                                     `json:"region"`
-	Sparkline bool                                       `json:"sparkline,omitempty"`
-	Stacked   bool                                       `json:"stacked,omitempty"`
-	Stat      string                                     `json:"stat,omitempty"`
-	Table     *CWDashboardBodyWidgetPropertyMetricTable  `json:"table,omitempty"`
-	Timezone  string                                     `json:"timezone,omitempty"`
-	Title     string                                     `json:"title,omitempty"`
-	View      string                                     `json:"view,omitempty"`
-	YAxis     *CWDashboardBodyWidgetPropertyMetricYAxis  `json:"yAxis,omitempty"`
+	Annotations *CWDashboardBodyWidgetPropertyMetricAnnotations `json:"annotations,omitempty"`
+	LiveData    bool                                            `json:"liveData,omitempty"`
+	Legend      *CWDashboardBodyWidgetPropertyMetricLegend      `json:"legend,omitempty"`
+	// An alarm annotation cannot be combined with a metrics array, so the field
+	// has to disappear entirely rather than serialize as [].
+	Metrics   [][]interface{}                           `json:"metrics,omitempty"`
+	Period    int32                                     `json:"period,omitempty"`
+	Region    string                                    `json:"region"`
+	Sparkline bool                                      `json:"sparkline,omitempty"`
+	Stacked   bool                                      `json:"stacked,omitempty"`
+	Stat      string                                    `json:"stat,omitempty"`
+	Table     *CWDashboardBodyWidgetPropertyMetricTable `json:"table,omitempty"`
+	Timezone  string                                    `json:"timezone,omitempty"`
+	Title     string                                    `json:"title,omitempty"`
+	View      string                                    `json:"view,omitempty"`
+	YAxis     *CWDashboardBodyWidgetPropertyMetricYAxis `json:"yAxis,omitempty"`
 }
 
 type CWDashboardBodyWidgetPropertyMetricAnnotations struct {
@@ -59,12 +60,14 @@ type CWDashboardBodyWidgetPropertyMetricAnnotations struct {
 	Vertical   []CWDashboardBodyWidgetPropertyMetricAnnotationsVertical   `json:"vertical,omitempty"`
 }
 
+// NOTE: Value carries no omitempty and Visible is a pointer, so that a
+// threshold line at 0 and an explicit `visible = false` both survive.
 type CWDashboardBodyWidgetPropertyMetricAnnotationsHorizontal struct {
 	Value   float64 `json:"value"`
 	Label   string  `json:"label,omitempty"`
 	Color   string  `json:"color,omitempty"`
 	Fill    string  `json:"fill,omitempty"`
-	Visible bool    `json:"visible,omitempty"`
+	Visible *bool   `json:"visible,omitempty"`
 	YAxis   string  `json:"yAxis,omitempty"`
 }
 
@@ -73,7 +76,7 @@ type CWDashboardBodyWidgetPropertyMetricAnnotationsVertical struct {
 	Label   string `json:"label,omitempty"`
 	Color   string `json:"color,omitempty"`
 	Fill    string `json:"fill,omitempty"`
-	Visible bool   `json:"visible,omitempty"`
+	Visible *bool  `json:"visible,omitempty"`
 }
 
 type CWDashboardBodyWidgetPropertyMetricLegend struct {

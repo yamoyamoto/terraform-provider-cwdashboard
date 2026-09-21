@@ -32,6 +32,17 @@ data "cwdashboard_graph_widget" "this" {
   left = [
     data.cwdashboard_metric.this.json,
   ]
+
+  annotations = {
+    # Draw the alarm threshold so the graph shows how close to firing it is.
+    horizontal = [
+      {
+        value = 80
+        label = "cpu-high alarm"
+        fill  = "above"
+      },
+    ]
+  }
 }
 
 data "cwdashboard" "this" {
@@ -59,6 +70,7 @@ resource "aws_cloudwatch_dashboard" "this" {
 
 ### Optional
 
+- `annotations` (Attributes) Lines drawn on top of the graph. Use `horizontal` for a threshold, `vertical` to mark a point in time, and `alarms` to render a single alarm instead of metrics. CloudWatch does not allow `alarms` together with metrics or with the other annotation kinds. (see [below for nested schema](#nestedatt--annotations))
 - `left` (List of String) Metrics to display on left Y axis
 - `left_y_axis` (Attributes) Settings for the left Y axis (see [below for nested schema](#nestedatt--left_y_axis))
 - `legend_position` (String) Position of the legend
@@ -77,6 +89,47 @@ resource "aws_cloudwatch_dashboard" "this" {
 ### Read-Only
 
 - `json` (String) The settings of the widget
+
+<a id="nestedatt--annotations"></a>
+### Nested Schema for `annotations`
+
+Optional:
+
+- `alarms` (List of String) The ARN of a single alarm to render. At most one, and only when `left`, `right`, `horizontal` and `vertical` are all empty.
+- `horizontal` (Attributes List) Horizontal lines, typically alarm thresholds (see [below for nested schema](#nestedatt--annotations--horizontal))
+- `vertical` (Attributes List) Vertical lines, typically marking a deploy or an incident (see [below for nested schema](#nestedatt--annotations--vertical))
+
+<a id="nestedatt--annotations--horizontal"></a>
+### Nested Schema for `annotations.horizontal`
+
+Required:
+
+- `value` (Number) The value on the Y axis to draw the line at
+
+Optional:
+
+- `color` (String) The hex color code, prefixed with '#' (e.g. '#00ff00')
+- `fill` (String) Shade the area on one side of the line. Valid values: `above`, `below`, `none`.
+- `label` (String) Label for the line
+- `visible` (Boolean) Whether the line is shown. Defaults to true.
+- `y_axis` (String) Which axis the value belongs to. Valid values: `left`, `right`.
+
+
+<a id="nestedatt--annotations--vertical"></a>
+### Nested Schema for `annotations.vertical`
+
+Required:
+
+- `value` (String) The point in time to draw the line at, in ISO 8601 format
+
+Optional:
+
+- `color` (String) The hex color code, prefixed with '#' (e.g. '#00ff00')
+- `fill` (String) Shade the area on one side of the line. Valid values: `before`, `after`, `none`.
+- `label` (String) Label for the line
+- `visible` (Boolean) Whether the line is shown. Defaults to true.
+
+
 
 <a id="nestedatt--left_y_axis"></a>
 ### Nested Schema for `left_y_axis`

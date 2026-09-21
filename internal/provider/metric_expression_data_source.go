@@ -80,8 +80,7 @@ func (m *metricExpressionDataSourceModel) Validate() error {
 
 	color := m.Color.ValueString()
 	if color != "" {
-		colorPattern := regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
-		if !colorPattern.MatchString(color) {
+		if !hexColorPattern.MatchString(color) {
 			return fmt.Errorf("invalid color format: %s, must be a six-digit hex color code (e.g., #FF0000)", color)
 		}
 	}

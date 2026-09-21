@@ -17,6 +17,17 @@ data "cwdashboard_graph_widget" "this" {
   left = [
     data.cwdashboard_metric.this.json,
   ]
+
+  annotations = {
+    # Draw the alarm threshold so the graph shows how close to firing it is.
+    horizontal = [
+      {
+        value = 80
+        label = "cpu-high alarm"
+        fill  = "above"
+      },
+    ]
+  }
 }
 
 data "cwdashboard" "this" {
