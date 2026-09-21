@@ -2,9 +2,13 @@ package provider
 
 import (
 	"fmt"
+	"regexp"
 
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
+
+// hexColorPattern matches the six-digit hex colors CloudWatch accepts, e.g. #FF0000.
+var hexColorPattern = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
 
 const (
 	MAX_WIDTH = 24
