@@ -50,6 +50,8 @@ func (p *cwDashboardProvider) DataSources(_ context.Context) []func() datasource
 		// Widgets
 		NewTextWidgetDataSource(),
 		NewGraphWidgetDataSource(),
+		NewAlarmWidgetDataSource(),
+		NewLogWidgetDataSource(),
 	}
 }
 

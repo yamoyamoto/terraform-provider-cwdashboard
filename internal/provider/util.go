@@ -1,6 +1,10 @@
 package provider
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/hashicorp/terraform-plugin-framework/types"
+)
 
 const (
 	MAX_WIDTH = 24
@@ -59,4 +63,19 @@ func layoutWidgets(widgets []CWDashboardBodyWidget) {
 			rowHeight = w.Height
 		}
 	}
+}
+
+// toStringSlice converts a list attribute's values to plain strings, dropping the
+// slice entirely when it is empty so that `omitempty` can leave the field out.
+func toStringSlice(values []types.String) []string {
+	if len(values) == 0 {
+		return nil
+	}
+
+	out := make([]string, 0, len(values))
+	for _, v := range values {
+		out = append(out, v.ValueString())
+	}
+
+	return out
 }

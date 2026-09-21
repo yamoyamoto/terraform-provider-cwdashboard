@@ -238,3 +238,66 @@ func TestBuildDashboardBodyJson(t *testing.T) {
 		assert.Equal(t, body, again, "dashboard body must be deterministic")
 	}
 }
+
+// Widget settings travel through JSON twice: each widget data source marshals
+// its settings, and the dashboard data source parses them back. Both switches
+// have to know every widget type, so this walks the real path end to end.
+func TestParseToWidgetSettings_AllWidgetTypes(t *testing.T) {
+	widgetJson := func(settings interface{}) attr.Value {
+		b, err := json.Marshal(settings)
+		assert.NoError(t, err)
+
+		return types.StringValue(string(b))
+	}
+
+	elements := []attr.Value{
+		widgetJson(textWidgetDataSourceSettings{
+			Type: typeTextWidget, Markdown: "# overview", Width: 24, Height: 2,
+		}),
+		widgetJson(alarmWidgetDataSourceSettings{
+			Type:   typeAlarmWidget,
+			Alarms: []string{"arn:aws:cloudwatch:ap-northeast-1:123456789012:alarm:api-cpu-high"},
+			Title:  "Service health",
+			Width:  24, Height: 4,
+		}),
+		widgetJson(graphWidgetDataSourceSettings{
+			Type: typeGraphWidget, Width: 24, Height: 6, Region: "ap-northeast-1",
+			Left: []IMetricSettings{
+				&metricDataSourceSettings{
+					Type: typeNameOfMetricDataSource, Namespace: "AWS/ECS", MetricName: "CPUUtilization",
+				},
+			},
+		}),
+		widgetJson(logWidgetDataSourceSettings{
+			Type: typeLogWidget, Query: "fields @message", LogGroupNames: []string{"/aws/ecs/api"},
+			Region: "ap-northeast-1", Width: 24, Height: 8,
+		}),
+	}
+
+	d := &dashboardDataSource{}
+	parsed, err := d.parseToWidgetSettings(context.Background(), elements)
+	assert.NoError(t, err)
+	assert.Len(t, parsed, 4)
+
+	body, err := buildDashboardBodyJson(context.Background(), dashboardDataSourceModel{
+		Widgets: types.ListValueMust(types.StringType, []attr.Value{}),
+	}, parsed)
+	assert.NoError(t, err)
+
+	var decoded CWDashboardBody
+	assert.NoError(t, json.Unmarshal([]byte(body), &decoded))
+
+	types_ := make([]string, 0, len(decoded.Widgets))
+	for _, w := range decoded.Widgets {
+		types_ = append(types_, w.Type)
+	}
+	assert.Equal(t, []string{"text", "alarm", "metric", "log"}, types_)
+
+	// Every widget is full width, so each one gets a row of its own.
+	assert.Equal(t, []int32{0, 2, 6, 12}, []int32{
+		decoded.Widgets[0].Y, decoded.Widgets[1].Y, decoded.Widgets[2].Y, decoded.Widgets[3].Y,
+	})
+
+	// The log widget's SOURCE clause is generated from log_group_names.
+	assert.Contains(t, body, `SOURCE '/aws/ecs/api' | fields @message`)
+}

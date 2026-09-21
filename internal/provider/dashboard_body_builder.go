@@ -143,13 +143,12 @@ type CWDashboardBodyWidgetPropertyExplorer struct {
 // 	WidgetsPerRow int                                        `json:"widgetsPerRow,omitempty"`
 // }
 
-// Alarm widget properties are planned for future implementation
-// type CWDashboardBodyWidgetPropertyAlarm struct {
-//     Alarms  []string `json:"alarms"`
-//     SortBy  string   `json:"sortBy,omitempty"`
-//     States  []string `json:"states,omitempty"`
-//     Title   string   `json:"title,omitempty"`
-// }
+type CWDashboardBodyWidgetPropertyAlarm struct {
+	Alarms []string `json:"alarms"`
+	SortBy string   `json:"sortBy,omitempty"`
+	States []string `json:"states,omitempty"`
+	Title  string   `json:"title,omitempty"`
+}
 
 func buildDashboardBodyJson(ctx context.Context, state dashboardDataSourceModel, rawWidgets []interface{}) (string, error) {
 	widgets := make([]CWDashboardBodyWidget, 0)
@@ -165,6 +164,18 @@ func buildDashboardBodyJson(ctx context.Context, state dashboardDataSourceModel,
 			widget, err := w.ToCWDashboardBodyWidget(ctx)
 			if err != nil {
 				return "", fmt.Errorf("failed to parse graph widget: %w", err)
+			}
+			widgets = append(widgets, widget)
+		case alarmWidgetDataSourceSettings:
+			widget, err := w.ToCWDashboardBodyWidget(ctx)
+			if err != nil {
+				return "", fmt.Errorf("failed to parse alarm widget: %w", err)
+			}
+			widgets = append(widgets, widget)
+		case logWidgetDataSourceSettings:
+			widget, err := w.ToCWDashboardBodyWidget(ctx)
+			if err != nil {
+				return "", fmt.Errorf("failed to parse log widget: %w", err)
 			}
 			widgets = append(widgets, widget)
 		default:

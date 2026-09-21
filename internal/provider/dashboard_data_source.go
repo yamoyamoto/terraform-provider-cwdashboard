@@ -212,6 +212,18 @@ func (d *dashboardDataSource) parseToWidgetSettings(_ context.Context, elements 
 				return nil, fmt.Errorf("failed to unmarshal graph widget json: %w", err)
 			}
 			widgets = append(widgets, w)
+		case typeAlarmWidget:
+			var w alarmWidgetDataSourceSettings
+			if err := json.Unmarshal([]byte(escaped), &w); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal alarm widget json: %w", err)
+			}
+			widgets = append(widgets, w)
+		case typeLogWidget:
+			var w logWidgetDataSourceSettings
+			if err := json.Unmarshal([]byte(escaped), &w); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal log widget json: %w", err)
+			}
+			widgets = append(widgets, w)
 		default:
 			return nil, fmt.Errorf("unsupported widget type: %s", widgetType)
 		}
