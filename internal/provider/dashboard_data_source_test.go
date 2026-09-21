@@ -1,6 +1,8 @@
 package provider
 
 import (
+	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
@@ -154,4 +156,85 @@ func createWidgetsList(count int) types.List {
 		elements[i] = types.StringValue("")
 	}
 	return types.ListValueMust(types.StringType, elements)
+}
+
+func TestBuildDashboardBodyJson(t *testing.T) {
+	state := dashboardDataSourceModel{
+		Start:          types.StringValue("-PT3H"),
+		PeriodOverride: types.StringValue("auto"),
+		Widgets:        types.ListValueMust(types.StringType, []attr.Value{}),
+	}
+
+	// A full width heading followed by two half width graphs: the layout that
+	// used to place the graphs below the height of the graph rather than below
+	// the heading.
+	rawWidgets := []interface{}{
+		textWidgetDataSourceSettings{
+			Type:     typeTextWidget,
+			Markdown: "# overview",
+			Width:    24,
+			Height:   2,
+		},
+		graphWidgetDataSourceSettings{
+			Type:   typeGraphWidget,
+			Width:  12,
+			Height: 6,
+			Region: "ap-northeast-1",
+			Title:  "ECS",
+			Left: []IMetricSettings{
+				&metricDataSourceSettings{
+					Type:       typeNameOfMetricDataSource,
+					Namespace:  "AWS/ECS",
+					MetricName: "CPUUtilization",
+					DimensionsMap: map[string]string{
+						"ClusterName": "shared",
+						"ServiceName": "api",
+					},
+					Statistic: "Average",
+				},
+			},
+		},
+		graphWidgetDataSourceSettings{
+			Type:   typeGraphWidget,
+			Width:  12,
+			Height: 6,
+			Region: "us-east-1",
+			Title:  "CloudFront",
+			Left: []IMetricSettings{
+				&metricDataSourceSettings{
+					Type:       typeNameOfMetricDataSource,
+					Namespace:  "AWS/CloudFront",
+					MetricName: "Requests",
+					DimensionsMap: map[string]string{
+						"DistributionId": "E123",
+						"Region":         "Global",
+					},
+					Region:    "us-east-1",
+					Statistic: "Sum",
+				},
+			},
+		},
+	}
+
+	body, err := buildDashboardBodyJson(context.Background(), state, rawWidgets)
+	assert.NoError(t, err)
+
+	var decoded CWDashboardBody
+	assert.NoError(t, json.Unmarshal([]byte(body), &decoded))
+
+	assert.Len(t, decoded.Widgets, 3)
+	assert.Equal(t, []int32{0, 0}, []int32{decoded.Widgets[0].X, decoded.Widgets[0].Y})
+	assert.Equal(t, []int32{0, 2}, []int32{decoded.Widgets[1].X, decoded.Widgets[1].Y})
+	assert.Equal(t, []int32{12, 2}, []int32{decoded.Widgets[2].X, decoded.Widgets[2].Y})
+
+	// Per-metric region is what lets a single dashboard mix regions.
+	assert.Contains(t, body, `"region":"us-east-1"`)
+
+	// The whole body must be byte for byte identical on every build, otherwise
+	// aws_cloudwatch_dashboard shows a diff on every plan.
+	for i := 0; i < 50; i++ {
+		again, err := buildDashboardBodyJson(context.Background(), state, rawWidgets)
+		assert.NoError(t, err)
+		assert.Equal(t, body, again, "dashboard body must be deterministic")
+	}
 }

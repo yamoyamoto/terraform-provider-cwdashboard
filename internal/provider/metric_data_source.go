@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -39,7 +40,7 @@ func (d *metricDataSource) Schema(_ context.Context, _ datasource.SchemaRequest,
 				Required:    true,
 			},
 			"account": schema.StringAttribute{
-				Description: "Account which this metric comes from",
+				Description: "The ID of the AWS account this metric comes from. Rendered as `accountId` in the dashboard body.",
 				Optional:    true,
 			},
 			"color": schema.StringAttribute{
@@ -60,16 +61,22 @@ func (d *metricDataSource) Schema(_ context.Context, _ datasource.SchemaRequest,
 				Optional:    true,
 			},
 			"region": schema.StringAttribute{
-				Description: "Region which this metric comes from",
-				Optional:    true,
+				Description: "The region this metric comes from. Set it to graph metrics from another " +
+					"region on the same dashboard (for example CloudFront and CLOUDFRONT-scoped WAF, " +
+					"whose metrics live in `us-east-1`).",
+				Optional: true,
 			},
 			"statistic": schema.StringAttribute{
 				Description: "What function to use for aggregating",
 				Optional:    true,
 			},
 			"unit": schema.StringAttribute{
-				Description: "Unit used to filter the metric stream",
-				Optional:    true,
+				Description: "Unit used to filter the metric stream. " +
+					"**Not rendered into the dashboard body**: the CloudWatch dashboard body structure " +
+					"has no per-metric unit field, so this value is accepted but ignored. " +
+					"Use `left_y_axis.show_units` / `right_y_axis.show_units` on the graph widget to " +
+					"control unit suffixes on the axis labels.",
+				Optional: true,
 			},
 
 			"json": schema.StringAttribute{
@@ -216,13 +223,26 @@ func (s *metricDataSourceSettings) buildMetricWidgetMetricsSettings(left bool, e
 	settings = append(settings, s.Namespace)
 	settings = append(settings, s.MetricName)
 
-	for dimKey, dimVal := range s.DimensionsMap {
+	// sort keys to make the order of dimensions deterministic. CloudWatch identifies a
+	// metric by the set of its dimensions, not by their order, so sorting is free. Without
+	// it Go's randomized map iteration produces a different dashboard body on every run,
+	// which shows up as a permanent diff on aws_cloudwatch_dashboard.
+	dimKeys := make([]string, 0, len(s.DimensionsMap))
+	for dimKey := range s.DimensionsMap {
+		dimKeys = append(dimKeys, dimKey)
+	}
+	sort.Strings(dimKeys)
+
+	for _, dimKey := range dimKeys {
 		settings = append(settings, dimKey)
-		settings = append(settings, dimVal)
+		settings = append(settings, s.DimensionsMap[dimKey])
 	}
 
 	renderingProperties := map[string]interface{}{}
 
+	if s.Account != "" {
+		renderingProperties["accountId"] = s.Account
+	}
 	if s.Color != "" {
 		renderingProperties["color"] = s.Color
 	}
@@ -232,9 +252,14 @@ func (s *metricDataSourceSettings) buildMetricWidgetMetricsSettings(left bool, e
 	if s.Period != 0 {
 		renderingProperties["period"] = s.Period
 	}
+	if s.Region != "" {
+		renderingProperties["region"] = s.Region
+	}
 	if s.Statistic != "" {
 		renderingProperties["stat"] = s.Statistic
 	}
+	// NOTE: s.Unit is intentionally not rendered. The CloudWatch dashboard body
+	// structure has no per-metric unit field.
 
 	if left {
 		renderingProperties["yAxis"] = "left"

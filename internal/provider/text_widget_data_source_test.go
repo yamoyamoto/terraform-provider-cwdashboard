@@ -10,10 +10,9 @@ import (
 
 func TestTextWidgetDataSourceSettingsToCWDashboardBodyWidget(t *testing.T) {
 	type testCase struct {
-		name                 string
-		widget               textWidgetDataSourceSettings
-		beforeWidgetPosition *widgetPosition
-		expected             CWDashboardBodyWidget
+		name     string
+		widget   textWidgetDataSourceSettings
+		expected CWDashboardBodyWidget
 	}
 
 	tests := []testCase{
@@ -25,7 +24,6 @@ func TestTextWidgetDataSourceSettingsToCWDashboardBodyWidget(t *testing.T) {
 				Markdown:   "# Test Header",
 				Background: "#ffffff",
 			},
-			beforeWidgetPosition: &widgetPosition{X: 0, Y: 0},
 			expected: CWDashboardBodyWidget{
 				Type:   "text",
 				X:      0,
@@ -45,7 +43,6 @@ func TestTextWidgetDataSourceSettingsToCWDashboardBodyWidget(t *testing.T) {
 				Height:   6,
 				Markdown: "# Test Header",
 			},
-			beforeWidgetPosition: &widgetPosition{X: 8, Y: 0},
 			expected: CWDashboardBodyWidget{
 				Type:   "text",
 				X:      8,
@@ -64,7 +61,6 @@ func TestTextWidgetDataSourceSettingsToCWDashboardBodyWidget(t *testing.T) {
 				Height:   6,
 				Markdown: "# Test Header",
 			},
-			beforeWidgetPosition: nil,
 			expected: CWDashboardBodyWidget{
 				Type:   "text",
 				X:      0,
@@ -83,7 +79,6 @@ func TestTextWidgetDataSourceSettingsToCWDashboardBodyWidget(t *testing.T) {
 				Height:   6,
 				Markdown: "# Test Header",
 			},
-			beforeWidgetPosition: &widgetPosition{X: 20, Y: 0},
 			expected: CWDashboardBodyWidget{
 				Type:   "text",
 				X:      0,
@@ -102,7 +97,6 @@ func TestTextWidgetDataSourceSettingsToCWDashboardBodyWidget(t *testing.T) {
 				Height:   6,
 				Markdown: "# Test Header",
 			},
-			beforeWidgetPosition: &widgetPosition{X: 0, Y: 6},
 			expected: CWDashboardBodyWidget{
 				Type:   "text",
 				X:      0,
@@ -123,12 +117,13 @@ func TestTextWidgetDataSourceSettingsToCWDashboardBodyWidget(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			actual, err := tc.widget.ToCWDashboardBodyWidget(ctx, tc.widget, tc.beforeWidgetPosition)
+			actual, err := tc.widget.ToCWDashboardBodyWidget(ctx)
 			require.NoError(t, err)
 
 			assert.Equal(t, "text", actual.Type)
-			assert.Equal(t, tc.expected.X, actual.X)
-			assert.Equal(t, tc.expected.Y, actual.Y)
+			// X / Y are assigned later by layoutWidgets; see TestLayoutWidgets.
+			assert.Equal(t, int32(0), actual.X)
+			assert.Equal(t, int32(0), actual.Y)
 			assert.Equal(t, tc.expected.Width, actual.Width)
 			assert.Equal(t, tc.expected.Height, actual.Height)
 

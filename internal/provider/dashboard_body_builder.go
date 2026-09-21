@@ -85,11 +85,13 @@ type CWDashboardBodyWidgetPropertyMetricYAxis struct {
 	Right *CWDashboardBodyWidgetPropertyMetricYAxisSide `json:"right,omitempty"`
 }
 
+// NOTE: Min / Max / ShowUnits are pointers so that the meaningful zero values
+// (`min = 0`, `max = 0`, `showUnits = false`) survive `omitempty`.
 type CWDashboardBodyWidgetPropertyMetricYAxisSide struct {
-	Label     string  `json:"label,omitempty"`
-	Min       float64 `json:"min,omitempty"`
-	Max       float64 `json:"max,omitempty"`
-	ShowUnits bool    `json:"showUnits,omitempty"`
+	Label     string   `json:"label,omitempty"`
+	Min       *float64 `json:"min,omitempty"`
+	Max       *float64 `json:"max,omitempty"`
+	ShowUnits *bool    `json:"showUnits,omitempty"`
 }
 
 type CWDashboardBodyWidgetPropertyMetricTable struct {
@@ -151,27 +153,28 @@ type CWDashboardBodyWidgetPropertyExplorer struct {
 
 func buildDashboardBodyJson(ctx context.Context, state dashboardDataSourceModel, rawWidgets []interface{}) (string, error) {
 	widgets := make([]CWDashboardBodyWidget, 0)
-	var currentPosition *widgetPosition
 	for _, rawWidget := range rawWidgets {
 		switch w := rawWidget.(type) {
 		case textWidgetDataSourceSettings:
-			widget, err := w.ToCWDashboardBodyWidget(ctx, w, currentPosition)
+			widget, err := w.ToCWDashboardBodyWidget(ctx)
 			if err != nil {
 				return "", fmt.Errorf("failed to parse text widget: %w", err)
 			}
-			currentPosition = &widgetPosition{X: widget.X + widget.Width, Y: widget.Y}
 			widgets = append(widgets, widget)
 		case graphWidgetDataSourceSettings:
-			widget, err := w.ToCWDashboardBodyWidget(ctx, currentPosition)
+			widget, err := w.ToCWDashboardBodyWidget(ctx)
 			if err != nil {
 				return "", fmt.Errorf("failed to parse graph widget: %w", err)
 			}
-			currentPosition = &widgetPosition{X: widget.X + widget.Width, Y: widget.Y}
 			widgets = append(widgets, widget)
 		default:
 			return "", fmt.Errorf("unsupported widget type")
 		}
 	}
+
+	// Positions are assigned in a single pass once every widget is built, so that
+	// each row can be laid out with the height of its tallest widget.
+	layoutWidgets(widgets)
 
 	body := CWDashboardBody{
 		Widgets:        widgets,

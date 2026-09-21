@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -110,12 +111,49 @@ func TestGraphWidgetDataSourceModel_Validate(t *testing.T) {
 				View:   types.StringValue("invalid"),
 			},
 			wantErr: true,
-			errMsg:  "view must be either 'timeSeries' or 'singleValue', got: invalid",
+			errMsg:  "view must be one of 'timeSeries', 'singleValue', 'gauge', 'bar', 'pie' or 'table', got: invalid",
+		},
+		{
+			name: "accepts every view CloudWatch supports",
+			model: graphWidgetDataSourceModel{
+				Period: types.Int32Value(60),
+				View:   types.StringValue("gauge"),
+			},
+			wantErr: false,
+		},
+		{
+			name: "invalid width",
+			model: graphWidgetDataSourceModel{
+				Period: types.Int32Value(60),
+				Width:  types.Int32Value(25),
+				Height: types.Int32Value(6),
+			},
+			wantErr: true,
+			errMsg:  "width must be between 1 and 24, got: 25",
+		},
+		{
+			name: "invalid height",
+			model: graphWidgetDataSourceModel{
+				Period: types.Int32Value(60),
+				Width:  types.Int32Value(8),
+				Height: types.Int32Value(0),
+			},
+			wantErr: true,
+			errMsg:  "height must be between 1 and 1000, got: 0",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// width / height are required by the schema, so every real model has
+			// them. Fill in a valid size for the cases that are about something else.
+			if tt.model.Width.IsNull() {
+				tt.model.Width = types.Int32Value(8)
+			}
+			if tt.model.Height.IsNull() {
+				tt.model.Height = types.Int32Value(6)
+			}
+
 			err := tt.model.Validate()
 			if tt.wantErr {
 				if err == nil {
@@ -156,9 +194,9 @@ func TestGraphWidgetDatasourceSettings_ToCWDashboardBodyWidget(t *testing.T) {
 			},
 			LeftYAxis: &graphWidgetYAxisDataSourceSettings{
 				Label:     "percentage",
-				Min:       0,
-				Max:       100,
-				ShowUnits: true,
+				Min:       ptrTo(0.0),
+				Max:       ptrTo(100.0),
+				ShowUnits: ptrTo(true),
 			},
 			LegendPosition: "bottom",
 			LiveData:       true,
@@ -182,8 +220,8 @@ func TestGraphWidgetDatasourceSettings_ToCWDashboardBodyWidget(t *testing.T) {
 			},
 			RightYAxis: &graphWidgetYAxisDataSourceSettings{
 				Label:     "bytes",
-				Min:       0,
-				ShowUnits: true,
+				Min:       ptrTo(0.0),
+				ShowUnits: ptrTo(true),
 			},
 			Sparkline: true,
 			Stacked:   true,
@@ -193,15 +231,14 @@ func TestGraphWidgetDatasourceSettings_ToCWDashboardBodyWidget(t *testing.T) {
 			View:      "timeSeries",
 			Width:     12,
 		}
-		beforeWidgetPosition := &widgetPosition{X: 6, Y: 10}
-
-		cwWidget, err := input.ToCWDashboardBodyWidget(context.TODO(), beforeWidgetPosition)
+		cwWidget, err := input.ToCWDashboardBodyWidget(context.TODO())
 
 		assert.NoError(t, err)
 
 		assert.Equal(t, "metric", cwWidget.Type)
-		assert.Equal(t, int32(6), cwWidget.X)
-		assert.Equal(t, int32(10), cwWidget.Y)
+		// X / Y are assigned later by layoutWidgets, not by the widget itself.
+		assert.Equal(t, int32(0), cwWidget.X)
+		assert.Equal(t, int32(0), cwWidget.Y)
 		assert.Equal(t, int32(12), cwWidget.Width)
 		assert.Equal(t, int32(6), cwWidget.Height)
 
@@ -219,14 +256,14 @@ func TestGraphWidgetDatasourceSettings_ToCWDashboardBodyWidget(t *testing.T) {
 		assert.Equal(t, "+0000", cwWidgetProperties.Timezone)
 		assert.Equal(t, &CWDashboardBodyWidgetPropertyMetricYAxisSide{
 			Label:     "percentage",
-			Min:       0,
-			Max:       100,
-			ShowUnits: true,
+			Min:       ptrTo(0.0),
+			Max:       ptrTo(100.0),
+			ShowUnits: ptrTo(true),
 		}, cwWidgetProperties.YAxis.Left)
 		assert.Equal(t, &CWDashboardBodyWidgetPropertyMetricYAxisSide{
 			Label:     "bytes",
-			Min:       0,
-			ShowUnits: true,
+			Min:       ptrTo(0.0),
+			ShowUnits: ptrTo(true),
 		}, cwWidgetProperties.YAxis.Right)
 		assert.Nil(t, cwWidgetProperties.Table)
 
@@ -238,11 +275,13 @@ func TestGraphWidgetDatasourceSettings_ToCWDashboardBodyWidget(t *testing.T) {
 			"InstanceId",
 			"i-1234567890abcdef0",
 			map[string]interface{}{
-				"color":  "#ff0000",
-				"label":  "CPU Utilization",
-				"period": int32(300),
-				"stat":   "Average",
-				"yAxis":  "left",
+				"accountId": "123456789012",
+				"color":     "#ff0000",
+				"label":     "CPU Utilization",
+				"period":    int32(300),
+				"region":    "us-east-1",
+				"stat":      "Average",
+				"yAxis":     "left",
 			},
 		}, cwWidgetProperties.Metrics[0])
 		assert.Equal(t, []interface{}{
@@ -251,13 +290,105 @@ func TestGraphWidgetDatasourceSettings_ToCWDashboardBodyWidget(t *testing.T) {
 			"InstanceId",
 			"i-1234567890abcdef0",
 			map[string]interface{}{
-				"color":  "#0000ff",
-				"label":  "Network In",
-				"period": int32(300),
-				"stat":   "Average",
-				"yAxis":  "right",
+				"accountId": "123456789012",
+				"color":     "#0000ff",
+				"label":     "Network In",
+				"period":    int32(300),
+				"region":    "us-east-1",
+				"stat":      "Average",
+				"yAxis":     "right",
 			},
 		}, cwWidgetProperties.Metrics[1])
 
 	})
+}
+
+// The intermediate settings JSON is produced by the data source and re-parsed by
+// the dashboard data source. UnmarshalJSON is hand written, so a field added to
+// the struct but forgotten in the intermediate struct is dropped silently. This
+// round trip fails whenever that happens.
+func TestGraphWidgetDataSourceSettings_JSONRoundTrip(t *testing.T) {
+	original := graphWidgetDataSourceSettings{
+		Type:   typeGraphWidget,
+		Height: 6,
+		Left: []IMetricSettings{
+			&metricDataSourceSettings{
+				Type:          typeNameOfMetricDataSource,
+				MetricName:    "CPUUtilization",
+				Namespace:     "AWS/ECS",
+				Account:       "123456789012",
+				Color:         "#ff0000",
+				DimensionsMap: map[string]string{"ClusterName": "shared"},
+				Label:         "CPU",
+				Period:        300,
+				Region:        "ap-northeast-1",
+				Statistic:     "Average",
+				Unit:          "Percent",
+			},
+		},
+		LeftYAxis: &graphWidgetYAxisDataSourceSettings{
+			Label:     "percentage",
+			Min:       ptrTo(0.0),
+			Max:       ptrTo(100.0),
+			ShowUnits: ptrTo(false),
+		},
+		LegendPosition: "bottom",
+		LiveData:       true,
+		Period:         300,
+		Region:         "ap-northeast-1",
+		Right: []IMetricSettings{
+			&metricExpressionDataSourceSettings{
+				Type:       typeNameOfMetricExpressionDataSource,
+				Expression: "ANOMALY_DETECTION_BAND(m1, 2)",
+				Label:      "band",
+				Period:     300,
+			},
+		},
+		RightYAxis: &graphWidgetYAxisDataSourceSettings{
+			Label:     "bytes",
+			ShowUnits: ptrTo(true),
+		},
+		Sparkline: true,
+		Stacked:   true,
+		Statistic: "Average",
+		Timezone:  "+0900",
+		Title:     "round trip",
+		View:      "timeSeries",
+		Width:     12,
+	}
+
+	encoded, err := json.Marshal(original)
+	assert.NoError(t, err)
+
+	var decoded graphWidgetDataSourceSettings
+	assert.NoError(t, json.Unmarshal(encoded, &decoded))
+
+	reEncoded, err := json.Marshal(decoded)
+	assert.NoError(t, err)
+
+	assert.JSONEq(t, string(encoded), string(reEncoded))
+}
+
+func TestGraphWidgetDataSourceSettings_YAxisZeroValuesSurvive(t *testing.T) {
+	w := graphWidgetDataSourceSettings{
+		Type:   typeGraphWidget,
+		Width:  12,
+		Height: 6,
+		Region: "ap-northeast-1",
+		LeftYAxis: &graphWidgetYAxisDataSourceSettings{
+			// Both of these are meaningful zero values and used to be dropped by
+			// omitempty, silently ignoring the configuration.
+			Min:       ptrTo(0.0),
+			ShowUnits: ptrTo(false),
+		},
+	}
+
+	cwWidget, err := w.ToCWDashboardBodyWidget(context.TODO())
+	assert.NoError(t, err)
+
+	encoded, err := json.Marshal(cwWidget)
+	assert.NoError(t, err)
+
+	assert.Contains(t, string(encoded), `"min":0`)
+	assert.Contains(t, string(encoded), `"showUnits":false`)
 }
